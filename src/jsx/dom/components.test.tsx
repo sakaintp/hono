@@ -325,6 +325,126 @@ function runner(
         await new Promise((resolve) => setTimeout(resolve))
         expect(root.innerHTML).toBe('<div>Error</div>')
       })
+
+      it('keeps the fallback when the parent re-renders', async () => {
+        const Child = () => {
+          throw new Error('error')
+        }
+        let setCount: (value: number) => void = () => {}
+        const App = () => {
+          const [count, set] = useState(0)
+          setCount = set
+          return (
+            <ul>
+              <li>count {count}</li>
+              <ErrorBoundary fallback={<li>caught</li>}>
+                <Child />
+              </ErrorBoundary>
+            </ul>
+          )
+        }
+        render(<App />, root)
+        expect(root.innerHTML).toBe('<ul><li>count 0</li><li>caught</li></ul>')
+        for (const count of [1, 2]) {
+          setCount(count)
+          await new Promise((resolve) => setTimeout(resolve))
+          expect(root.innerHTML).toBe(`<ul><li>count ${count}</li><li>caught</li></ul>`)
+        }
+      })
+
+      it('keeps the fallback after a child throws on its own update and the parent re-renders', async () => {
+        let throwNow = false
+        let bump: (value: number) => void = () => {}
+        const Child = () => {
+          const [n, set] = useState(0)
+          bump = set
+          if (throwNow) {
+            throw new Error('error')
+          }
+          return <li>ok {n}</li>
+        }
+        let setCount: (value: number) => void = () => {}
+        const App = () => {
+          const [count, set] = useState(0)
+          setCount = set
+          return (
+            <ul>
+              <li>count {count}</li>
+              <ErrorBoundary fallback={<li>caught</li>}>
+                <Child />
+              </ErrorBoundary>
+            </ul>
+          )
+        }
+        render(<App />, root)
+        expect(root.innerHTML).toBe('<ul><li>count 0</li><li>ok 0</li></ul>')
+        throwNow = true
+        bump(1)
+        await new Promise((resolve) => setTimeout(resolve))
+        expect(root.innerHTML).toBe('<ul><li>count 0</li><li>caught</li></ul>')
+        setCount(1)
+        await new Promise((resolve) => setTimeout(resolve))
+        expect(root.innerHTML).toBe('<ul><li>count 1</li><li>caught</li></ul>')
+      })
+
+      it('updates a keyed list of boundaries when rows are removed and reordered', async () => {
+        const Row = ({ label, fail }: { label: string; fail?: boolean }) => {
+          if (fail) {
+            throw new Error(`error ${label}`)
+          }
+          return <li>{label}</li>
+        }
+        let setItems: (value: string[]) => void = () => {}
+        const App = () => {
+          const [items, set] = useState(['a', 'b', 'c'])
+          setItems = set
+          return (
+            <ul>
+              {items.map((item) => (
+                <ErrorBoundary key={item} fallback={<li>caught {item}</li>}>
+                  <Row label={item} fail={item === 'b'} />
+                </ErrorBoundary>
+              ))}
+            </ul>
+          )
+        }
+        render(<App />, root)
+        expect(root.innerHTML).toBe('<ul><li>a</li><li>caught b</li><li>c</li></ul>')
+        setItems(['b', 'c'])
+        await new Promise((resolve) => setTimeout(resolve))
+        expect(root.innerHTML).toBe('<ul><li>caught b</li><li>c</li></ul>')
+        setItems(['c', 'b'])
+        await new Promise((resolve) => setTimeout(resolve))
+        expect(root.innerHTML).toBe('<ul><li>c</li><li>caught b</li></ul>')
+      })
+
+      it('updates an unkeyed list of boundaries when a row is removed', async () => {
+        const Row = ({ label, fail }: { label: string; fail?: boolean }) => {
+          if (fail) {
+            throw new Error(`error ${label}`)
+          }
+          return <li>{label}</li>
+        }
+        let setItems: (value: string[]) => void = () => {}
+        const App = () => {
+          const [items, set] = useState(['a', 'b', 'c'])
+          setItems = set
+          return (
+            <ul>
+              {items.map((item) => (
+                <ErrorBoundary fallback={<li>caught {item}</li>}>
+                  <Row label={item} fail={item === 'b'} />
+                </ErrorBoundary>
+              ))}
+            </ul>
+          )
+        }
+        render(<App />, root)
+        expect(root.innerHTML).toBe('<ul><li>a</li><li>caught b</li><li>c</li></ul>')
+        setItems(['b', 'c'])
+        await new Promise((resolve) => setTimeout(resolve))
+        expect(root.innerHTML).toBe('<ul><li>caught b</li><li>c</li></ul>')
+      })
     })
   })
 }
